@@ -1,0 +1,38 @@
+# docker-compose.yml
+version: "3.8"
+
+services:
+  pub:
+    build:
+      context: ./pub
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./pub/voting_system/.env
+    environment:
+      - REDIS_HOST=redis
+    depends_on:
+      - redis
+
+  sub:
+    build:
+      context: ./sub
+      dockerfile: Dockerfile
+    env_file:
+      - ./sub/.env
+    environment:
+      - REDIS_HOST=redis
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6378:6378"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+
+volumes:
+  redis_data:
