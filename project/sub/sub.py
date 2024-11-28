@@ -1,15 +1,20 @@
-import redis
 import psycopg2
 from psycopg2 import sql
 import requests
 from dotenv import load_dotenv
 import os
+from google.cloud import pubsub_v1
+from concurrent.futures import TimeoutError
+
 load_dotenv()
 
-redis_client = redis.StrictRedis(host=os.getenv("REDIS_HOST",""), port=os.getenv("REDIS_PORT",6379), db=os.getenv("REDIS_DB",0))
-channel = os.getenv("REDIS_CHANNEL","")
-pubsub = redis_client.pubsub()
-pubsub.subscribe(channel)
+# Pub/Sub configuration
+project_id = os.getenv("GOOGLE_CLOUD_PROJECT", "")
+subscription_id = os.getenv("PUBSUB_SUBSCRIPTION", "")
+timeout = 5.0  # Timeout in seconds
+
+subscriber = pubsub_v1.SubscriberClient()
+subscription_path = subscriber.subscription_path(project_id, subscription_id)
 
 url = os.getenv('URL', '')
 connection_params = {
@@ -92,7 +97,7 @@ def clear_db():
     print("Database cleared.")
 
 def insert_vote(data):
-    """Insert a new vote into the Redis database."""
+    """Insert a new vote into the database."""
     votes = data.split("=")[1]
     votes = votes.split(",")
     count_sum = 0
@@ -128,19 +133,29 @@ def insert_vote(data):
         else:
             print("Failed to send POST request:", response.status_code)
 
-print(f"Subscribed to {channel}. Waiting for messages...")
+def callback(message):
+    """Callback function to process Pub/Sub messages."""
+    data = message.data.decode('utf-8')
+    
+    if data == "clear_db":
+        clear_db()
+    elif data.startswith("vote"):
+        insert_vote(data)
+    else:
+        print(message.data)
+    message.ack()
 
-for message in pubsub.listen():
-    if message['type'] == 'message':
-        data = message['data'].decode('utf-8')
-        
-        if data == "clear_db":
-            clear_db()
-        
-        elif data.startswith("vote"):
-            insert_vote(data)
-        else:
-            break
+print(f"Listening for messages on {subscription_path}")
 
-cur.close()
-conn.close()
+streaming_pull_future = subscriber.subscribe(subscription_path, callback=callback)
+print(f"Listening for messages on {subscription_path}..\n")
+
+try:
+    streaming_pull_future.result()
+except TimeoutError:
+    streaming_pull_future.cancel()
+    streaming_pull_future.result()
+finally:
+    subscriber.close()
+    cur.close()
+    conn.close()
