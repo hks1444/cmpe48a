@@ -5,22 +5,94 @@ from django.views.decorators.csrf import csrf_exempt
 import json
 from dotenv import load_dotenv
 import requests
+import psycopg2
 
 load_dotenv()
 
+# Function to insert data
+def insert_vote_count(city_number, ballotbox_no, partyname, count):
+    try:
+        conn = psycopg2.connect(**connection_params)
+        cur = conn.cursor()
+        insert_query = '''
+        INSERT INTO vote_counts (city_number, ballotbox_no, partyname, count)
+        VALUES (%s, %s, %s, %s)
+        ON CONFLICT (city_number, ballotbox_no, partyname)
+        DO UPDATE SET count = EXCLUDED.count;
+        '''
+        cur.execute(insert_query, (city_number, ballotbox_no, partyname, count))
+        conn.commit()
+        print(f"Inserted/Updated record for city_number: {city_number}, ballotbox_no: {ballotbox_no}, partyname: {partyname}")
+    except Exception as e:
+        print(f"Error inserting record: {e}")
+        conn.rollback()
+    finally:
+        cur.close()
+        conn.close()
 
-redis_channel = os.getenv('REDIS_CHANNEL', '1')
-redis_host = os.getenv('REDIS_HOST', '1')
-redis_port = int(os.getenv('REDIS_PORT', 1))
+def clear_db_utility():
+    """Clear the postgreSQL database."""
+    conn = psycopg2.connect(**connection_params)
+    cur = conn.cursor()
+
+    # Execute the create table query
+    cur.execute(create_table_query)
+    conn.commit()
+    # Execute the create table query
+    cur.execute(create_party_table_query)
+    conn.commit()
+
+    # Execute the insert query
+    cur.execute(insert_parties_query)
+    conn.commit()
+    
+    cur.execute("DELETE FROM vote_counts")
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
 seeAll_url = os.getenv('SEE_ALL_URL', '1')
 seeCities_url = os.getenv('SEE_CITIES_URL', '1')
-redis_db = 0
-# Connect to Redis
-redis_client = redis.StrictRedis(
-    host = redis_host,
-    port = redis_port,
-    db = redis_db,
-)
+url = os.getenv('URL', '')
+connection_params = {
+    'dbname': os.getenv('DB_NAME', ''),
+    'user': os.getenv('DB_USER', ''),
+    'password': os.getenv('DB_PASSWORD', ''),
+    'host': os.getenv('DB_HOST', ''),
+    'port': os.getenv('DB_PORT', '')
+}
+
+# Define the query to create the party table
+create_party_table_query = '''
+CREATE TABLE IF NOT EXISTS party (
+    party_id SERIAL PRIMARY KEY,
+    partyname VARCHAR(100) UNIQUE
+);
+'''
+
+# Define the query to insert party names
+insert_parties_query = '''
+INSERT INTO party (partyname) VALUES
+    ('party1'),
+    ('party2'),
+    ('party3'),
+    ('party4'),
+    ('party5'),
+    ('party6')
+ON CONFLICT (partyname) DO NOTHING;
+'''
+
+create_table_query = '''
+CREATE TABLE IF NOT EXISTS vote_counts (
+    city_number INTEGER,
+    ballotbox_no INTEGER,
+    partyname VARCHAR(100),
+    count INTEGER,
+    UNIQUE (city_number, ballotbox_no, partyname)
+);
+'''
+
 @csrf_exempt
 def seeAll(request):
     if request.method == "GET":
@@ -93,18 +165,39 @@ def vote(request):
         box_no = data['box_no']
         votes = data['votes']
         election_size = data['election_size']
-        channel = redis_channel
-        results_list = []
-        results_string = ""
-        # Publish votes to Redis
+        count_sum = 0
         for party, count in votes.items():
-            vote = f"{election_size}:{city_no}:{box_no}:{party}:{count}"
-            results_list.append(vote)
-        results_string = ",".join(results_list)
-        redis_client.publish(channel, f"votes={results_string}")
+            count_sum += int(count)
+        for party, count in votes.items():
+            # Data to send in the request
+            data = {
+                "city_number": int(city_no),
+                "ballotbox_no": int(box_no),
+                "partyname": party,
+                "count": int(count),
+                "election_size": int(election_size),
+                "count_sum": count_sum
+            }
+            insert_vote_count(city_no, box_no, party, count)
+            break
+            # Sending the POST request
+            response = requests.post(url, json=data)
 
+            # Check if the request was successful
+            if response.status_code == 200:
+                # Parse the JSON response
+                response_data = response.json()
+                print(data)
+                # Check if 'valid' is true or false
+                if response_data.get("valid") is True:
+                    print("The vote is valid.")
+                    insert_vote_count(city_no, box_no, party, count)
+                else:
+                    print("The vote is invalid.")
+            else:
+                print("Failed to send POST request:", response.status_code)
+                return JsonResponse({'status': 'error', 'message': 'Failed to send POST request.'}, status=500)       
         return JsonResponse({'status': 'success', 'message': 'Votes registered.'})
-
     except Exception as e:
         return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
 
@@ -117,8 +210,7 @@ def clear_db(request):
         return JsonResponse({'error': 'Only POST method is allowed'}, status=405)
 
     try:
-        channel = redis_channel
-        redis_client.publish(channel, "clear_db")
+        clear_db_utility()
         return JsonResponse({'status': 'success', 'message': 'Database cleared.'})
 
     except Exception as e:

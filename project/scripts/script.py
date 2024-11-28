@@ -47,7 +47,7 @@ def see_cities():
 def simulate_election(election_size):
     box_number = 100
     if election_size == 1:
-        box_number = 10
+        box_number = 2
     elif election_size == 2:
         box_number = 1000
     elif election_size == 3:
@@ -68,10 +68,8 @@ def simulate_election(election_size):
 if __name__ == '__main__':
     #time.sleep(10)
     clear_db()
-    time.sleep(10)
+    #time.sleep(10)
     simulate_election(1)
-    for i in range(1, 10):
-        time.sleep(10)
-        see_all()
-        see_cities()
+    #see_all()
+    #see_cities()
     
