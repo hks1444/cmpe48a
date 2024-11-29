@@ -1,7 +1,7 @@
 import requests
 import random
 import time
-BASE_URL = 'http://127.0.0.1:8000/voting/'
+BASE_URL = 'http://35.246.137.147:8000/voting/'
 # URL of the Django server (update as needed)
 VOTING_URL = f'{BASE_URL}vote/'
 CLEAR_DB_URL = f'{BASE_URL}clear-db/'
@@ -70,6 +70,6 @@ if __name__ == '__main__':
     clear_db()
     #time.sleep(10)
     simulate_election(1)
-    #see_all()
-    #see_cities()
+    see_all()
+    see_cities()
     

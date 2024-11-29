@@ -1,4 +1,3 @@
-import redis
 from django.http import JsonResponse
 import os
 from django.views.decorators.csrf import csrf_exempt
@@ -8,6 +7,53 @@ import requests
 import psycopg2
 
 load_dotenv()
+
+def isValidVote(city_number, ballotbox_no, partyname, count, count_sum, election_size):
+    try:
+        # Establish PostgreSQL connection
+        conn = psycopg2.connect(
+            host=os.getenv('DB_HOST'),
+            database=os.getenv('DB_NAME'),
+            user=os.getenv('DB_USER'),
+            password=os.getenv('DB_PASSWORD')
+        )
+        cur = conn.cursor()
+
+        # Check validation conditions
+        if election_size == 1:
+            if ballotbox_no < 1 or ballotbox_no > 1000:
+                return False
+        elif election_size == 2:
+            if ballotbox_no < 1 or ballotbox_no > 10000:
+                return False
+        elif election_size == 3:
+            if ballotbox_no < 1 or ballotbox_no > 100000:
+                return False
+        else:
+            return False
+        if city_number < 1 or city_number > 81:
+            return False
+        if count_sum > 400 or count_sum < count:
+            return False
+
+        # Check if the party exists in the `party` table
+        cur.execute("SELECT party_id FROM party WHERE partyname = %s", (partyname,))
+        party_exists = cur.fetchone()
+        if not party_exists:
+            return False
+
+        # All checks passed, return valid
+        return True
+
+    except Exception as e:
+        print(f"Error validating vote: {e}")
+        return False
+
+    finally:
+        # Close database connection
+        cur.close()
+        conn.close()
+
 
 # Function to insert data
 def insert_vote_count(city_number, ballotbox_no, partyname, count):
@@ -98,7 +144,7 @@ def seeAll(request):
     if request.method == "GET":
         try:
             # Make a GET request to the Google Cloud Function
-            response = requests.get('https://get-total-votes-771655325553.us-central1.run.app')
+            response = requests.get(seeAll_url)
             if response.status_code == 200:
                 # Parse the JSON response
                 response_data = response.json()
@@ -178,25 +224,14 @@ def vote(request):
                 "election_size": int(election_size),
                 "count_sum": count_sum
             }
-            insert_vote_count(city_no, box_no, party, count)
-            break
-            # Sending the POST request
-            response = requests.post(url, json=data)
+            
+            response = isValidVote(city_no, box_no, party, count, count_sum, election_size)
 
-            # Check if the request was successful
-            if response.status_code == 200:
-                # Parse the JSON response
-                response_data = response.json()
-                print(data)
-                # Check if 'valid' is true or false
-                if response_data.get("valid") is True:
-                    print("The vote is valid.")
-                    insert_vote_count(city_no, box_no, party, count)
-                else:
-                    print("The vote is invalid.")
+            if response:
+                print("The vote is valid.")
+                insert_vote_count(city_no, box_no, party, count)
             else:
-                print("Failed to send POST request:", response.status_code)
-                return JsonResponse({'status': 'error', 'message': 'Failed to send POST request.'}, status=500)       
+                print("The vote is invalid.")       
         return JsonResponse({'status': 'success', 'message': 'Votes registered.'})
     except Exception as e:
         return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
