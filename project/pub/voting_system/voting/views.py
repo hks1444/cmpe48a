@@ -26,7 +26,7 @@ def seeAll(request):
     if request.method == "GET":
         try:
             # Make a GET request to the Google Cloud Function
-            response = requests.get('https://get-total-votes-771655325553.us-central1.run.app')
+            response = requests.get(seeAll_url)
             if response.status_code == 200:
                 # Parse the JSON response
                 response_data = response.json()
