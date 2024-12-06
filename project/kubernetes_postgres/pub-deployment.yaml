@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: voting-pub
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: voting-pub
+  template:
+    metadata:
+      labels:
+        app: voting-pub
+    spec:
+      containers:
+      - name: pub
+        image: gcr.io/tensile-imprint-439410-s4/voting-pub
+        ports:
+        - containerPort: 8000
+        envFrom:
+        - configMapRef:
+            name: postgres-config
