@@ -1,0 +1,6 @@
+Django
+redis
+requests
+python-dotenv
+psycopg2-binary
+django-cors-headers
