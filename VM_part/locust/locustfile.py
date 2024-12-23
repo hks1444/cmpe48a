@@ -60,7 +60,7 @@ class QuickTestUser(VotingUser):
                 current_i = 1  # Optionally, wrap around
         
         # Perform tasks with the assigned `i`
-        self._simulate_election(1, 1, i)
+        self._simulate_election(1, random.randint(1,1000), i)
         self.view_all_votes()
         self.view_cities()
 
